@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "fastapi_user"
+version = "0.1.0"
+description = "A simple api where you can register, login, visit user profile and update it."
+authors = ["Aaditya Dulal <np01cp4a190231@islingtoncollege.edu.np>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = "^0.68.1"
+uvicorn = "^0.15.0"
+pytest = "^6.2.5"
+requests = "^2.26.0"
+isort = "^5.9.3"
+black = "^21.9b0"
+SQLAlchemy = "^1.4.25"
+python-dotenv = "^0.19.0"
+psycopg2 = "^2.9.1"
+python-multipart = "^0.0.5"
+PyJWT = "^2.2.0"
+bcrypt = "^3.2.0"
+passlib = "^1.7.4"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
