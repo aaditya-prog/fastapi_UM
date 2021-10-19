@@ -18,5 +18,12 @@ class UserCreate(BaseModel):
 
 
 class AuthDetails(BaseModel):
+    full_name: str
+    email: str
+    username: str
+    password: str
+
+
+class Login(BaseModel):
     username: str
     password: str

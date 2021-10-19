@@ -10,7 +10,7 @@ from app.database import SessionLocal, engine
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 from app.crud import AuthHandler
-from app.schemas import AuthDetails
+from app.schemas import AuthDetails, Login
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -62,23 +62,27 @@ def add_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def adduser(auth_details: AuthDetails):
     if any(x['username'] == auth_details.username for x in users):
         raise HTTPException(status_code=400, detail='Username is taken')
+    if any(x['email'] == auth_details.email for x in users):
+        raise HTTPException(status_code=400, detail='Email is taken')
     hashed_password = auth_handler.get_password_hash(auth_details.password)
     users.append({
+        'full_name': auth_details.full_name,
+        'email': auth_details.email,
         'username': auth_details.username,
         'password': hashed_password
     })
-    return
+    return {'message':'User registered.'}
 
 
 @app.post('/login')
-def login(auth_details: AuthDetails):
+def login(login: Login):
     user = None
     for x in users:
-        if x['username'] == auth_details.username:
+        if x['username'] == login.username:
             user = x
             break
 
-    if (user is None) or (not auth_handler.verify_password(auth_details.password, user['password'])):
+    if (user is None) or (not auth_handler.verify_password(login.password, user['password'])):
         raise HTTPException(status_code=401, detail='Invalid username and/or password')
     token = auth_handler.encode_token(user['username'])
     return {'token': token}
