@@ -1,19 +1,14 @@
-from typing import List, Optional
-from starlette.routing import Host
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Path, Query
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from fastapi.security import OAuth2PasswordBearer
-from app import crud, models, schemas
-from app.database import SessionLocal, engine
-from sqlalchemy.orm import Session
-from fastapi.encoders import jsonable_encoder
+from email_validator import validate_email, EmailNotValidError
+
+from app import models, schemas
 from app.crud import AuthHandler
-from app.schemas import AuthDetails, Login
+from app.database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
-
 
 description = """
 These API endpoints allow us to register, login, check user profile and update profile. ✔️
@@ -53,44 +48,60 @@ users = []
 auth_handler = AuthHandler()
 
 
-@app.post("/register/", response_model=schemas.User)
-def add_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return crud.register(db, user)
+@app.post("/register/", response_model=schemas.User, tags=["User"])
+async def register(
+        user: schemas.UserCreate,
+        db: Session = Depends(get_db),
+):
+    db_username = auth_handler.get_user_by_username(db, username=user.username)
+    db_email = auth_handler.get_user_by_email(db, email=user.email)
+    if db_username:
+        raise HTTPException(status_code=400, detail=f"User with the username '{user.username}' already exists.")
+    if db_email:
+        raise HTTPException(status_code=400, detail=f"User with the email '{user.email}' already exists.")
+        # Validate.
+    try:
+        valid = validate_email(user.email)
+        # Update with the normalized form.
+        email = valid.email
+    except EmailNotValidError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=str(e),
+        )
+    if not auth_handler.validate_password(user.password):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Password not accepted. It must contain one uppercase letter, one lowercase letter, one numeral, "
+                   f"one special character and should be longer than 6 characters and shorter than 20 characters",
+        )
+    user = auth_handler.create_user(db=db, user=user)
+    raise HTTPException(
+        status_code=200,
+        detail=f"User account with the email {user.email} created successfully.",
+    )
 
 
-@app.post('/add-user', status_code=201)
-def adduser(auth_details: AuthDetails):
-    if any(x['username'] == auth_details.username for x in users):
-        raise HTTPException(status_code=400, detail='Username is taken')
-    if any(x['email'] == auth_details.email for x in users):
-        raise HTTPException(status_code=400, detail='Email is taken')
-    hashed_password = auth_handler.get_password_hash(auth_details.password)
-    users.append({
-        'full_name': auth_details.full_name,
-        'email': auth_details.email,
-        'username': auth_details.username,
-        'password': hashed_password
-    })
-    return {'message':'User registered.'}
-
-
-@app.post('/login')
-def login(login: Login):
-    user = None
-    for x in users:
-        if x['username'] == login.username:
-            user = x
-            break
-
-    if (user is None) or (not auth_handler.verify_password(login.password, user['password'])):
-        raise HTTPException(status_code=401, detail='Invalid username and/or password')
-    token = auth_handler.encode_token(user['username'])
-    return {'token': token}
-
-
-@app.get('/unprotected')
-def unprotected():
-    return {'hello': 'world'}
+@app.post("/login", tags=["Authentication"])
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = auth_handler.get_user_by_email(db, form_data.username)
+    email = user.email
+    password = user.hashed_password
+    verify_password = auth_handler.verify_password(form_data.password, password)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email is incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not verify_password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect Password, try again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth_handler.encode_token(email)
+    return {"token": token, "token_type": "Bearer"}
 
 
 @app.get('/protected')

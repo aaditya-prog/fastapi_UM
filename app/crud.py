@@ -1,24 +1,11 @@
-from app.schemas import UserCreate
-from sqlalchemy.orm import Session
-from app import models
+from datetime import datetime, timedelta
 import jwt
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
 
-
-def register(db: Session, login: UserCreate):
-    db_user = models.Login(
-        full_name=login.full_name,
-        email=login.email,
-        username=login.username,
-        password=login.password
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+from app import models, schemas
 
 
 class AuthHandler:
@@ -31,6 +18,27 @@ class AuthHandler:
 
     def verify_password(self, plain_password, hashed_password):
         return self.pwd_context.verify(plain_password, hashed_password)
+
+    @staticmethod
+    def get_user_by_email(db: Session, email: str):
+        return db.query(models.User).filter(models.User.email == email).first()
+
+    @staticmethod
+    def get_user_by_username(db, username: str):
+        return db.query(models.User).filter(models.User.username == username).first()
+
+    def create_user(self, db: Session, user: schemas.UserCreate):
+        hashed_password = self.get_password_hash(user.password)
+        db_user = models.User(
+            email=user.email,
+            hashed_password=hashed_password,
+            full_name=user.full_name,
+            username=user.username
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
 
     def encode_token(self, user_id):
         payload = {
@@ -55,3 +63,29 @@ class AuthHandler:
 
     def auth_wrapper(self, auth: HTTPAuthorizationCredentials = Security(security)):
         return self.decode_token(auth.credentials)
+
+    # Function to validate the password
+    def validate_password(self, passwd):
+
+        special_sym = ['$', '@', '#', '%']
+        val = True
+
+        if len(passwd) < 6:
+            val = False
+
+        if len(passwd) > 20:
+            val = False
+
+        if not any(char.isdigit() for char in passwd):
+            val = False
+
+        if not any(char.isupper() for char in passwd):
+            val = False
+
+        if not any(char.islower() for char in passwd):
+            val = False
+
+        if not any(char in special_sym for char in passwd):
+            val = False
+        if val:
+            return val
