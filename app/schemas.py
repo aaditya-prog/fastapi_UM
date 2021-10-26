@@ -1,3 +1,5 @@
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -21,3 +23,14 @@ class User(UserBase):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str
+
+
+class EmailSchema(BaseModel):
+    email: List[EmailStr]
+    body: Dict[str, Any]

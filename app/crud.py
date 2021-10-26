@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+
 import jwt
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,13 +12,25 @@ from app import models, schemas
 class AuthHandler:
     security = HTTPBearer()
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    secret = 'SECRET'
+    secret = "SECRET"
 
     def get_password_hash(self, password):
         return self.pwd_context.hash(password)
 
     def verify_password(self, plain_password, hashed_password):
         return self.pwd_context.verify(plain_password, hashed_password)
+
+    def check_password(self, password, hash_password) -> str:
+        return self.pwd_context.verify(password, hash_password)
+
+    def check_reset_password(self, new_password: str, id: int, db: Session):
+        hashed_password = self.get_password_hash(new_password)
+        db_user_to_update = db.query(models.User).filter(models.User.id == id).first()
+        db_user_to_update.hashed_password = hashed_password
+        db.add(db_user_to_update)
+        db.commit()
+        db.refresh(db_user_to_update)
+        return db_user_to_update
 
     @staticmethod
     def get_user_by_email(db: Session, email: str):
@@ -33,7 +46,7 @@ class AuthHandler:
             email=user.email,
             hashed_password=hashed_password,
             full_name=user.full_name,
-            username=user.username
+            username=user.username,
         )
         db.add(db_user)
         db.commit()
@@ -42,32 +55,29 @@ class AuthHandler:
 
     def encode_token(self, user_id):
         payload = {
-            'exp': datetime.utcnow() + timedelta(days=0, minutes=5),
-            'iat': datetime.utcnow(),
-            'sub': user_id
+            "exp": datetime.utcnow() + timedelta(days=0, minutes=5),
+            "iat": datetime.utcnow(),
+            "sub": user_id,
         }
-        return jwt.encode(
-            payload,
-            self.secret,
-            algorithm='HS256'
-        )
+        return jwt.encode(payload, self.secret, algorithm="HS256")
 
     def decode_token(self, token):
         try:
-            payload = jwt.decode(token, self.secret, algorithms=['HS256'])
-            return payload['sub']
+            payload = jwt.decode(token, self.secret, algorithms=["HS256"])
+            return payload["sub"]
         except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail='Signature has expired')
+            raise HTTPException(status_code=401, detail="Signature has expired")
         except jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail='Invalid token')
+            raise HTTPException(status_code=401, detail="Invalid token")
 
     def auth_wrapper(self, auth: HTTPAuthorizationCredentials = Security(security)):
         return self.decode_token(auth.credentials)
 
     # Function to validate the password
-    def validate_password(self, passwd):
+    @staticmethod
+    def validate_password(passwd):
 
-        special_sym = ['$', '@', '#', '%']
+        special_sym = ["$", "@", "#", "%", "!", "&"]
         val = True
 
         if len(passwd) < 6:
