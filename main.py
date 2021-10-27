@@ -15,20 +15,25 @@ from app.settings import Settings
 models.Base.metadata.create_all(bind=engine)
 
 description = """
-These API endpoints allow us to register, login, check user profile and update profile. ✔️
+These API endpoints allow us to register, login, profile, change password. ✔️
 
 ## Users
 
 You will be able to:
 
-* **Register.**
-* **Login.**
-* **Profile.**
-* **Update Profile.**
+* **Register, Login, Profile, Change Password.**
+* ****
 
+
+## Admin
+
+You will be able to:
+
+* **Register, Login, Profile, Change Password.**
+* ****
 """
 app = FastAPI(
-    title="User registration, login and profile.",
+    title="E-commerce API",
     description=description,
     # version="0.0.1",
     # terms_of_service="http://example.com/terms/",
@@ -52,24 +57,52 @@ auth_handler = AuthHandler()
 settings = Settings()
 
 
+@app.post("/create-admin/", response_model=schemas.User, tags=["Admin"])
+async def create_admin(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db),
+):
+    try:
+        valid = validate_email(user.email)
+        # Update with the normalized form.
+        email = valid.email
+    except EmailNotValidError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=str(e),
+        )
+
+    if not auth_handler.validate_password(user.password):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Password not accepted. It must contain one uppercase letter, one lowercase letter, one numeral, "
+            f"one special character and should be longer than 6 characters and shorter than 20 characters",
+        )
+
+    db_email = auth_handler.get_user_by_email(db, email=user.email)
+    if db_email is None:
+        user = auth_handler.create_super_user(db=db, user=user)
+        raise HTTPException(
+            status_code=200,
+            detail=f"Admin account with the email {user.email} created successfully.",
+        )
+    if db_email.username:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with the username '{user.username}' already exists.",
+        )
+    if db_email.email:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with the email '{user.email}' already exists.",
+        )
+
+
 @app.post("/register/", response_model=schemas.User, tags=["User"])
 async def register(
     user: schemas.UserCreate,
     db: Session = Depends(get_db),
 ):
-    db_username = auth_handler.get_user_by_username(db, username=user.username)
-    db_email = auth_handler.get_user_by_email(db, email=user.email)
-    if db_username:
-        raise HTTPException(
-            status_code=400,
-            detail=f"User with the username '{user.username}' already exists.",
-        )
-    if db_email:
-        raise HTTPException(
-            status_code=400,
-            detail=f"User with the email '{user.email}' already exists.",
-        )
-        # Validate.
     try:
         valid = validate_email(user.email)
         # Update with the normalized form.
@@ -85,14 +118,27 @@ async def register(
             detail=f"Password not accepted. It must contain one uppercase letter, one lowercase letter, one numeral, "
             f"one special character and should be longer than 6 characters and shorter than 20 characters",
         )
-    user = auth_handler.create_user(db=db, user=user)
-    raise HTTPException(
-        status_code=200,
-        detail=f"User account with the email {user.email} created successfully.",
-    )
+
+    user_db = auth_handler.get_user_by_email(db, email=user.email)
+    if user_db is None:
+        user = auth_handler.create_user(db=db, user=user)
+        raise HTTPException(
+            status_code=200,
+            detail=f"User account with the email {user.email} created successfully.",
+        )
+    if user.username:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with the username '{user.username}' already exists.",
+        )
+    if user.email:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with the email '{user.email}' already exists.",
+        )
 
 
-@app.post("/login", tags=["Authentication"])
+@app.post("/login", tags=["User"])
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
@@ -116,18 +162,25 @@ def login(
     return {"token": token, "token_type": "Bearer"}
 
 
-@app.get("/protected")
-def protected(username=Depends(auth_handler.auth_wrapper)):
-    return {"name": username}
+@app.get("/profile", tags=["User"])
+def profile(email=Depends(auth_handler.auth_wrapper), db: Session = Depends(get_db)):
+    current_user = auth_handler.get_user_by_email(db, email)
+    username = current_user.username
+    user_email = current_user.email
+    full_name = current_user.full_name
+    return JSONResponse(
+        status_code=200,
+        content={"username": username, "email": user_email, "full_name": full_name},
+    )
 
 
-@app.patch("/change-password", tags=["Authentication"])
+@app.patch("/change-password", tags=["User"])
 async def change_password(
     reset_password: schemas.ChangePassword,
-    username=Depends(auth_handler.auth_wrapper),
+    email=Depends(auth_handler.auth_wrapper),
     db: Session = Depends(get_db),
 ):
-    current_user = auth_handler.get_user_by_email(db, email=username)
+    current_user = auth_handler.get_user_by_email(db, email=email)
     print(current_user)
 
     password = current_user.hashed_password
